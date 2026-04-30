@@ -149,6 +149,8 @@ ext {
     kafkaVersion = "3.8.1"
     apacheCommonsLangVersion = "3.20.0"
     slf4jVersion = "2.0.17"
+    awsSdkVersion = "2.29.29"
+    awsSigningInterceptorVersion = "3.0.0"
 
     openSearchJavaClientVersion = "3.8.0"
 
@@ -194,6 +196,13 @@ dependencies {
     implementation "org.slf4j:slf4j-api:$slf4jVersion"
     implementation "org.opensearch.client:opensearch-java:$openSearchJavaClientVersion"
     implementation "org.apache.commons:commons-lang3:$apacheCommonsLangVersion"
+
+    // AWS SigV4 authentication support
+    implementation "io.github.acm19:aws-request-signing-apache-interceptor:$awsSigningInterceptorVersion"
+    implementation "software.amazon.awssdk:auth:$awsSdkVersion"
+    implementation "software.amazon.awssdk:regions:$awsSdkVersion"
+    implementation "software.amazon.awssdk:http-auth-aws:$awsSdkVersion"
+    implementation "software.amazon.awssdk:sts:$awsSdkVersion"
 
     testImplementation platform("org.junit:junit-bom:${junitVersion}")
     testImplementation "org.junit.jupiter:junit-jupiter:${junitVersion}"

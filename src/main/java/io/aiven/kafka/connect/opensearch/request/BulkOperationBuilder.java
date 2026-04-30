@@ -36,6 +36,7 @@ import io.aiven.kafka.connect.opensearch.IndexWriteMethod;
 import io.aiven.kafka.connect.opensearch.OpenSearchSinkConnectorConfig;
 import io.aiven.kafka.connect.opensearch.OpenSearchTaskHandler;
 import io.aiven.kafka.connect.opensearch.Utils;
+import io.aiven.kafka.connect.opensearch.sig4.OpenSearchSigV4ConfigDefContributor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -45,12 +46,16 @@ public final class BulkOperationBuilder {
 
     private final OpenSearchSinkConnectorConfig config;
 
+    private final boolean isAoss;
+
     private static final Logger LOGGER = LoggerFactory.getLogger(OpenSearchTaskHandler.class);
 
     private final ObjectMapper mapper = new ObjectMapper();
 
     public BulkOperationBuilder(final OpenSearchSinkConnectorConfig config) {
         this.config = config;
+        this.isAoss = "aoss"
+                .equalsIgnoreCase(config.getString(OpenSearchSigV4ConfigDefContributor.AWS_SERVICE_NAME_CONFIG));
     }
 
     public BulkOperation buildFor(final SinkRecord record) {
@@ -111,14 +116,20 @@ public final class BulkOperationBuilder {
                         .retryOnConflict(Math.min(config.maxInFlightRequests(), 3))));
             } else {
                 if (config.dataStreamEnabled()) {
-                    bulkOperation = BulkOperation.of(b -> b
-                            .create(c -> c.id(documentId).index(indexName).routing(routing).document(binaryData)));
+                    bulkOperation = BulkOperation.of(b -> b.create(c -> {
+                        if (!isAoss) {
+                            c.id(documentId);
+                        }
+                        return c.index(indexName).routing(routing).document(binaryData);
+                    }));
                 } else {
-                    final var indexOperationBuilder = new IndexOperation.Builder<>().id(documentId)
-                            .index(indexName)
+                    final var indexOperationBuilder = new IndexOperation.Builder<>().index(indexName)
                             .routing(routing)
                             .document(binaryData);
-                    addVersionIfAny(indexOperationBuilder, documentIDStrategy, record);
+                    if (!isAoss) {
+                        indexOperationBuilder.id(documentId);
+                        addVersionIfAny(indexOperationBuilder, documentIDStrategy, record);
+                    }
                     bulkOperation = BulkOperation.of(b -> b.index(indexOperationBuilder.build()));
                 }
             }
