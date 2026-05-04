@@ -28,6 +28,7 @@ public class OpenSearchSigV4ConfigDefContributor implements ConfigDefContributor
     public static final String AWS_SECRET_ACCESS_KEY_CONFIG = "aws.secret_access_key";
     public static final String AWS_REGION_CONFIG = "aws.region";
     public static final String AWS_SERVICE_NAME_CONFIG = "aws.service.name";
+    public static final String AWS_ASSUME_ROLE_ARN_CONFIG = "aws.assume_role_arn";
 
     private static final String AWS_ACCESS_KEY_ID_DOC = "AWS Access key id. "
             + "When provided together with aws.secret_access_key, static credentials are used. "
@@ -40,6 +41,9 @@ public class OpenSearchSigV4ConfigDefContributor implements ConfigDefContributor
     private static final String AWS_SERVICE_NAME_DOC = "AWS service name for SigV4 signing. "
             + "Use 'es' for Amazon OpenSearch Service or 'aoss' for Amazon OpenSearch Serverless. "
             + "Defaults to 'es'.";
+    private static final String AWS_ASSUME_ROLE_ARN_DOC = "ARN of an IAM role to assume for OpenSearch access. "
+            + "The connector uses STS AssumeRole with its own credentials as source. "
+            + "If not set, the connector's own credentials are used directly.";
 
     private static final String AWS_GROUP_NAME = "AWS Authentication SigV4";
 
@@ -49,9 +53,11 @@ public class OpenSearchSigV4ConfigDefContributor implements ConfigDefContributor
                 Width.SHORT, "Region")
                 .define(AWS_SERVICE_NAME_CONFIG, Type.STRING, "es", Importance.MEDIUM, AWS_SERVICE_NAME_DOC,
                         AWS_GROUP_NAME, 1, Width.SHORT, "Service Name")
+                .define(AWS_ASSUME_ROLE_ARN_CONFIG, Type.STRING, null, Importance.MEDIUM, AWS_ASSUME_ROLE_ARN_DOC,
+                        AWS_GROUP_NAME, 2, Width.SHORT, "Assume Role ARN")
                 .define(AWS_ACCESS_KEY_ID_CONFIG, Type.STRING, null, Importance.MEDIUM, AWS_ACCESS_KEY_ID_DOC,
-                        AWS_GROUP_NAME, 2, Width.SHORT, "Access Key Id")
+                        AWS_GROUP_NAME, 3, Width.SHORT, "Access Key Id")
                 .define(AWS_SECRET_ACCESS_KEY_CONFIG, Type.PASSWORD, null, Importance.MEDIUM, AWS_SECRET_ACCESS_KEY_DOC,
-                        AWS_GROUP_NAME, 3, Width.SHORT, "Secret Access Key");
+                        AWS_GROUP_NAME, 4, Width.SHORT, "Secret Access Key");
     }
 }

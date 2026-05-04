@@ -16,9 +16,8 @@
 package io.aiven.kafka.connect.opensearch.sig4;
 
 import static io.aiven.kafka.connect.opensearch.sig4.OpenSearchSigV4ConfigDefContributor.AWS_ACCESS_KEY_ID_CONFIG;
-import static io.aiven.kafka.connect.opensearch.sig4.OpenSearchSigV4ConfigDefContributor.AWS_REGION_CONFIG;
+import static io.aiven.kafka.connect.opensearch.sig4.OpenSearchSigV4ConfigDefContributor.AWS_ASSUME_ROLE_ARN_CONFIG;
 import static io.aiven.kafka.connect.opensearch.sig4.OpenSearchSigV4ConfigDefContributor.AWS_SECRET_ACCESS_KEY_CONFIG;
-import static io.aiven.kafka.connect.opensearch.sig4.OpenSearchSigV4ConfigDefContributor.AWS_SERVICE_NAME_CONFIG;
 
 import java.util.Objects;
 
@@ -27,16 +26,13 @@ import org.apache.kafka.common.config.types.Password;
 import io.aiven.kafka.connect.opensearch.OpenSearchSinkConnectorConfig;
 import io.aiven.kafka.connect.opensearch.spi.OpenSearchClientConfigurator;
 
-import io.github.acm19.aws.interceptor.http.AwsRequestSigningApacheV5Interceptor;
 import org.apache.hc.client5.http.impl.async.HttpAsyncClientBuilder;
-import org.apache.hc.core5.http.HttpRequestInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.http.auth.aws.signer.AwsV4HttpSigner;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sts.StsClient;
 import software.amazon.awssdk.services.sts.auth.StsAssumeRoleCredentialsProvider;
@@ -49,10 +45,11 @@ import software.amazon.awssdk.services.sts.model.AssumeRoleRequest;
  * Credential resolution order:
  * <ol>
  * <li>If {@code aws.access_key_id} and {@code aws.secret_access_key} are set, static credentials are used.</li>
+ * <li>If {@code aws.assume_role_arn} is set, STS AssumeRole is used.</li>
  * <li>If the {@code AWS_ROLE_ARN} environment variable is present, STS AssumeRole is used with the default credential
  * chain as source credentials (supports IRSA role chaining in EKS).</li>
- * <li>Otherwise the AWS SDK {@link DefaultCredentialsProvider} chain is used (IRSA, environment variables, EC2 instance
- * profiles, etc.).</li>
+ * <li>Otherwise the AWS SDK {@link DefaultCredentialsProvider} chain is used (IRSA, environment variables, EC2
+ * instance profiles, etc.).</li>
  * </ol>
  *
  * @see <a href="https://github.com/Aiven-Open/opensearch-connector-for-apache-kafka/pull/357">Upstream PR #357</a>
@@ -63,24 +60,10 @@ public class OpenSearchSigV4ClientConfigurator implements OpenSearchClientConfig
 
     @Override
     public boolean apply(final OpenSearchSinkConnectorConfig config, final HttpAsyncClientBuilder builder) {
-        final String region = config.getString(AWS_REGION_CONFIG);
-        if (region == null) {
-            return false;
-        }
-
-        final String serviceName = config.getString(AWS_SERVICE_NAME_CONFIG);
-        final AwsCredentialsProvider credentialsProvider = buildCredentialsProvider(config, region);
-
-        LOGGER.info("Configuring AWS SigV4 authentication for service={}, region={}", serviceName, region);
-
-        final HttpRequestInterceptor interceptor = new AwsRequestSigningApacheV5Interceptor(serviceName,
-                AwsV4HttpSigner.create(), credentialsProvider, Region.of(region));
-
-        builder.addRequestInterceptorLast(interceptor);
-        return true;
+        return false;
     }
 
-    private static AwsCredentialsProvider buildCredentialsProvider(final OpenSearchSinkConnectorConfig config,
+    public static AwsCredentialsProvider buildCredentialsProvider(final OpenSearchSinkConnectorConfig config,
             final String region) {
 
         // 1. Explicit static credentials
@@ -91,10 +74,13 @@ public class OpenSearchSigV4ClientConfigurator implements OpenSearchClientConfig
             return StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKeyId, secretAccessKey.value()));
         }
 
-        // 2. STS AssumeRole when AWS_ROLE_ARN is set (IRSA role chaining)
-        final String roleArn = System.getenv("AWS_ROLE_ARN");
+        // 2. STS AssumeRole when aws.assume_role_arn is configured or AWS_ROLE_ARN env var is set
+        String roleArn = config.getString(AWS_ASSUME_ROLE_ARN_CONFIG);
+        if (roleArn == null || roleArn.isBlank()) {
+            roleArn = System.getenv("AWS_ROLE_ARN");
+        }
         if (roleArn != null && !roleArn.isBlank()) {
-            LOGGER.info("AWS_ROLE_ARN detected ({}), configuring STS AssumeRole credentials", roleArn);
+            LOGGER.info("Configuring STS AssumeRole credentials for role {}", roleArn);
             final String sessionName = "kafka-connect-opensearch-" + System.currentTimeMillis();
             final var stsClient = StsClient.builder().region(Region.of(region)).build();
             final var assumeRoleRequest = AssumeRoleRequest.builder()

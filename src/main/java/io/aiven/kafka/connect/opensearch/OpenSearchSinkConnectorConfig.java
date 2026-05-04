@@ -447,7 +447,7 @@ public class OpenSearchSinkConnectorConfig extends AbstractConfig {
         }
     }
 
-    private List<String> connectionUrls() {
+    public List<String> connectionUrls() {
         return getList(CONNECTION_URL_CONFIG).stream()
                 .map(u -> u.endsWith("/") ? u.substring(0, u.length() - 1) : u)
                 .collect(Collectors.toList());

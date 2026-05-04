@@ -40,13 +40,20 @@ import org.opensearch.client.opensearch.indices.CreateIndexRequest;
 import org.opensearch.client.opensearch.indices.ExistsIndexTemplateRequest;
 import org.opensearch.client.opensearch.indices.PutIndexTemplateRequest;
 import org.opensearch.client.transport.OpenSearchTransport;
+import org.opensearch.client.transport.aws.AwsSdk2Transport;
+import org.opensearch.client.transport.aws.AwsSdk2TransportOptions;
 import org.opensearch.client.transport.httpclient5.ApacheHttpClient5TransportBuilder;
 
 import io.aiven.kafka.connect.opensearch.bulk.BulkProcessor;
 import io.aiven.kafka.connect.opensearch.request.BulkOperationBuilder;
+import io.aiven.kafka.connect.opensearch.sig4.OpenSearchSigV4ClientConfigurator;
+import io.aiven.kafka.connect.opensearch.sig4.OpenSearchSigV4ConfigDefContributor;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.http.SdkHttpClient;
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
+import software.amazon.awssdk.regions.Region;
 
 public class OpenSearchTaskHandler {
 
@@ -86,13 +93,36 @@ public class OpenSearchTaskHandler {
     public OpenSearchTaskHandler(final OpenSearchSinkConnectorConfig config,
             final ErrantRecordReporter errantRecordReporter) {
         this.config = config;
-        this.transport = ApacheHttpClient5TransportBuilder.builder(this.config.httpHosts())
-                .setHttpClientConfigCallback(new HttpClientConfigCallback(this.config))
-                .build();
+        this.transport = buildTransport(this.config);
         this.client = new OpenSearchClient(transport);
         this.bulkProcessor = new BulkProcessor(Time.SYSTEM, client, config, errantRecordReporter);
         this.bulkProcessor.start();
         this.bulkOperationBuilder = new BulkOperationBuilder(config);
+    }
+
+    private OpenSearchTransport buildTransport(final OpenSearchSinkConnectorConfig config) {
+        final String awsRegion = config.getString(OpenSearchSigV4ConfigDefContributor.AWS_REGION_CONFIG);
+        if (awsRegion == null || awsRegion.isBlank()) {
+            return ApacheHttpClient5TransportBuilder.builder(config.httpHosts())
+                    .setHttpClientConfigCallback(new HttpClientConfigCallback(config))
+                    .build();
+        }
+
+        final SdkHttpClient httpClient = UrlConnectionHttpClient.builder().build();
+        final AwsSdk2TransportOptions options = AwsSdk2TransportOptions.builder()
+                .setCredentials(OpenSearchSigV4ClientConfigurator.buildCredentialsProvider(config, awsRegion))
+                .build();
+        final String host = config.connectionUrls().get(0)
+                .replaceFirst("https://", "")
+                .replaceFirst("http://", "");
+
+        LOGGER.info("Using AwsSdk2Transport for AWS OpenSearch endpoint {} in region {}", host, awsRegion);
+        return new AwsSdk2Transport(
+                httpClient,
+                host,
+                config.getString(OpenSearchSigV4ConfigDefContributor.AWS_SERVICE_NAME_CONFIG),
+                Region.of(awsRegion),
+                options);
     }
 
     public void put(final Collection<SinkRecord> records) {
