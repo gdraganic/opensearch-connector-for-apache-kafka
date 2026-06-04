@@ -524,7 +524,9 @@ public class BulkProcessor {
         final var reason = bulkItemResponse.error().reason();
         return reason.contains("strict_dynamic_mapping_exception") || reason.contains("mapper_parsing_exception")
                 || reason.contains("illegal_argument_exception")
-                || reason.contains("action_request_validation_exception");
+                || reason.contains("action_request_validation_exception")
+                || reason.contains("document_parsing_exception")
+                || reason.contains("failed to parse");
     }
 
     private synchronized void onBatchCompletion(final int batchSize) {
