@@ -438,6 +438,33 @@ public class BulkProcessorTest {
     }
 
     @Test
+    public void reportToDlqWhenErrorTypeIsMalformedButReasonDoesNotNameIt(final @Mock OpenSearchClient client)
+            throws IOException {
+        final var clientAnswer = new ClientAnswer();
+        when(client.bulk(any(BulkRequest.class))).thenAnswer(clientAnswer);
+
+        final var dlqReporter = mock(ErrantRecordReporter.class);
+        final var config = new OpenSearchSinkConnectorConfig(Map.of(CONNECTION_URL_CONFIG, "http://localhost",
+                MAX_BUFFERED_RECORDS_CONFIG, "100", MAX_IN_FLIGHT_REQUESTS_CONFIG, "5", BATCH_SIZE_CONFIG, "2",
+                BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, BehaviorOnMalformedDoc.REPORT.toString()));
+        final String immenseTerm = "Document contains at least one immense term in field=\"labels._value\" "
+                + "(whose UTF8 encoding is longer than the max length 32766), all of which were skipped.";
+        final var bulkProcessor = new BulkProcessor(Time.SYSTEM, client, config, dlqReporter);
+        clientAnswer.expect(List.of(newIndexRequest(111)),
+                failedResponse("illegal_argument_exception", immenseTerm, HttpStatus.SC_BAD_REQUEST));
+
+        bulkProcessor.start();
+
+        bulkProcessor.add(newIndexRequest(111), newSinkRecord(), 1);
+
+        final int flushTimeoutMs = 1000;
+        bulkProcessor.flush(flushTimeoutMs);
+
+        assertTrue(clientAnswer.expectationsMet());
+        verify(dlqReporter, times(1)).report(any(SinkRecord.class), any(Throwable.class));
+    }
+
+    @Test
     public void doNotReportToDlqWhenReportIsNotConfigured(final @Mock OpenSearchClient client) throws IOException {
         final var clientAnswer = new ClientAnswer();
         when(client.bulk(any(BulkRequest.class))).thenAnswer(clientAnswer);
@@ -495,11 +522,16 @@ public class BulkProcessorTest {
     }
 
     private BulkResponse failedResponse(final String failureMessage, final boolean abortable) {
+        return failedResponse("some_type", failureMessage,
+                abortable ? HttpStatus.SC_BAD_REQUEST : HttpStatus.SC_TOO_MANY_REQUESTS);
+    }
+
+    private BulkResponse failedResponse(final String type, final String reason, final int status) {
         final var filedResponse = BulkResponseItem
-                .of(b -> b.error(ErrorCause.builder().type("some_type").reason(failureMessage).build())
+                .of(b -> b.error(ErrorCause.builder().type(type).reason(reason).build())
                         .operationType(OperationType.Index)
                         .index("some_index")
-                        .status(abortable ? HttpStatus.SC_BAD_REQUEST : HttpStatus.SC_TOO_MANY_REQUESTS));
+                        .status(status));
         return BulkResponse.of(b -> b.errors(true).took(100L).items(List.of(filedResponse)));
     }
 

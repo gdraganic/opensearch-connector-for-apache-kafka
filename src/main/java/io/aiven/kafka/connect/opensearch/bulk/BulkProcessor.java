@@ -517,16 +517,26 @@ public class BulkProcessor {
 
     private boolean responseContainsVersionConflict(final BulkResponseItem bulkItemResponse) {
         return bulkItemResponse.status() == HttpStatus.SC_CONFLICT
-                || bulkItemResponse.error().reason().contains("version_conflict_engine_exception");
+                || matchesErrorTypeOrReason(bulkItemResponse, "version_conflict_engine_exception");
     }
 
     private boolean responseContainsMalformedDocError(final BulkResponseItem bulkItemResponse) {
-        final var reason = bulkItemResponse.error().reason();
-        return reason.contains("strict_dynamic_mapping_exception") || reason.contains("mapper_parsing_exception")
-                || reason.contains("illegal_argument_exception")
-                || reason.contains("action_request_validation_exception")
-                || reason.contains("document_parsing_exception")
-                || reason.contains("failed to parse");
+        return matchesErrorTypeOrReason(bulkItemResponse, "strict_dynamic_mapping_exception")
+                || matchesErrorTypeOrReason(bulkItemResponse, "mapper_parsing_exception")
+                || matchesErrorTypeOrReason(bulkItemResponse, "illegal_argument_exception")
+                || matchesErrorTypeOrReason(bulkItemResponse, "action_request_validation_exception")
+                || matchesErrorTypeOrReason(bulkItemResponse, "document_parsing_exception")
+                || matchesErrorTypeOrReason(bulkItemResponse, "failed to parse");
+    }
+
+    // The exception class is in error.type; error.reason is free text and often omits it (e.g. immense term).
+    private static boolean matchesErrorTypeOrReason(final BulkResponseItem item, final String errorType) {
+        final var error = item.error();
+        if (error == null) {
+            return false;
+        }
+        return error.type() != null && error.type().contains(errorType)
+                || error.reason() != null && error.reason().contains(errorType);
     }
 
     private synchronized void onBatchCompletion(final int batchSize) {
