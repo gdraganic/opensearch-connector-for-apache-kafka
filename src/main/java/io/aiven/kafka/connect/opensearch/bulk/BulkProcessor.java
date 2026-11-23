@@ -525,7 +525,8 @@ public class BulkProcessor {
         return matchesErrorType(bulkItemResponse, "strict_dynamic_mapping_exception")
                 || matchesErrorType(bulkItemResponse, "mapper_parsing_exception")
                 || matchesErrorType(bulkItemResponse, "illegal_argument_exception")
-                || matchesErrorType(bulkItemResponse, "action_request_validation_exception");
+                || matchesErrorType(bulkItemResponse, "action_request_validation_exception")
+                || matchesErrorType(bulkItemResponse, "document_parsing_exception");
     }
 
     private static boolean matchesErrorType(final BulkResponseItem item, final String errorType) {

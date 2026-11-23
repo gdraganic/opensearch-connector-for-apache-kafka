@@ -411,6 +411,29 @@ public class BulkProcessorTest {
     }
 
     @Test
+    public void reportToDlqWhenDocumentParsingFails(final @Mock OpenSearchClient client) throws IOException {
+        final var clientAnswer = new ClientAnswer();
+        when(client.bulk(any(BulkRequest.class))).thenAnswer(clientAnswer);
+
+        final var dlqReporter = mock(ErrantRecordReporter.class);
+        final var config = new OpenSearchSinkConnectorConfig(Map.of(CONNECTION_URL_CONFIG, "http://localhost",
+                MAX_BUFFERED_RECORDS_CONFIG, "100", MAX_IN_FLIGHT_REQUESTS_CONFIG, "5", BATCH_SIZE_CONFIG, "2",
+                BEHAVIOR_ON_MALFORMED_DOCS_CONFIG, BehaviorOnMalformedDoc.REPORT.toString()));
+        final var bulkProcessor = new BulkProcessor(Time.SYSTEM, client, config, dlqReporter);
+        clientAnswer.expect(List.of(newIndexRequest(111)), failedResponse("document_parsing_exception", true));
+
+        bulkProcessor.start();
+
+        bulkProcessor.add(newIndexRequest(111), newSinkRecord(), 1);
+
+        final int flushTimeoutMs = 1000;
+        bulkProcessor.flush(flushTimeoutMs);
+
+        assertTrue(clientAnswer.expectationsMet());
+        verify(dlqReporter, times(1)).report(any(SinkRecord.class), any(Throwable.class));
+    }
+
+    @Test
     public void reportToDlqWhenMalformedDocBehaviorIsReport(final @Mock OpenSearchClient client) throws IOException {
         final var clientAnswer = new ClientAnswer();
         when(client.bulk(any(BulkRequest.class))).thenAnswer(clientAnswer);
